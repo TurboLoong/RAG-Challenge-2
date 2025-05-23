@@ -5,7 +5,7 @@ from typing import Union, List, Dict, Type, Optional, Literal
 from openai import OpenAI
 import asyncio
 from src.api_request_parallel_processor import process_api_requests_from_file
-from openai.lib._parsing import type_to_response_format_param 
+from openai.lib._parsing import type_to_response_format_param
 import tiktoken
 import src.prompts as prompts
 import requests
@@ -16,11 +16,10 @@ from copy import deepcopy
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 
-
 class BaseOpenaiProcessor:
     def __init__(self):
         self.llm = self.set_up_llm()
-        self.default_model = 'gpt-4o-2024-08-06'
+        self.default_model = "gpt-4o-2024-08-06"
         # self.default_model = 'gpt-4o-mini-2024-07-18',
 
     def set_up_llm(self):
@@ -28,20 +27,21 @@ class BaseOpenaiProcessor:
         llm = OpenAI(
             api_key=os.getenv("OPENAI_API_KEY"),
             timeout=None,
-            max_retries=2
-            )
+            max_retries=2,
+            base_url="https://api.siliconflow.cn/v1",
+        )
         return llm
 
     def send_message(
         self,
         model=None,
         temperature=0.5,
-        seed=None, # For deterministic ouptputs
-        system_content='You are a helpful assistant.',
-        human_content='Hello!',
+        seed=None,  # For deterministic ouptputs
+        system_content="You are a helpful assistant.",
+        human_content="Hello!",
         is_structured=False,
-        response_format=None
-        ):
+        response_format=None,
+    ):
         if model is None:
             model = self.default_model
         params = {
@@ -49,14 +49,14 @@ class BaseOpenaiProcessor:
             "seed": seed,
             "messages": [
                 {"role": "system", "content": system_content},
-                {"role": "user", "content": human_content}
-            ]
+                {"role": "user", "content": human_content},
+            ],
         }
-        
+
         # Reasoning models do not support temperature
         if "o3-mini" not in model:
             params["temperature"] = temperature
-            
+
         if not is_structured:
             completion = self.llm.chat.completions.create(**params)
             content = completion.choices[0].message.content
@@ -68,7 +68,11 @@ class BaseOpenaiProcessor:
             response = completion.choices[0].message.parsed
             content = response.dict()
 
-        self.response_data = {"model": completion.model, "input_tokens": completion.usage.prompt_tokens, "output_tokens": completion.usage.completion_tokens}
+        self.response_data = {
+            "model": completion.model,
+            "input_tokens": completion.usage.prompt_tokens,
+            "output_tokens": completion.usage.completion_tokens,
+        }
         print(self.response_data)
 
         return content
@@ -89,12 +93,13 @@ class BaseIBMAPIProcessor:
         load_dotenv()
         self.api_token = os.getenv("IBM_API_KEY")
         self.base_url = "https://rag.timetoact.at/ibm"
-        self.default_model = 'meta-llama/llama-3-3-70b-instruct'
+        self.default_model = "meta-llama/llama-3-3-70b-instruct"
+
     def check_balance(self):
         """Check the current balance for the provided token."""
         balance_url = f"{self.base_url}/balance"
         headers = {"Authorization": f"Bearer {self.api_token}"}
-        
+
         try:
             response = requests.get(balance_url, headers=headers)
             response.raise_for_status()
@@ -102,11 +107,11 @@ class BaseIBMAPIProcessor:
         except requests.HTTPError as err:
             print(f"Error checking balance: {err}")
             return None
-    
+
     def get_available_models(self):
         """Get a list of available foundation models."""
         models_url = f"{self.base_url}/foundation_model_specs"
-        
+
         try:
             response = requests.get(models_url)
             response.raise_for_status()
@@ -114,19 +119,16 @@ class BaseIBMAPIProcessor:
         except requests.HTTPError as err:
             print(f"Error getting available models: {err}")
             return None
-    
+
     def get_embeddings(self, texts, model_id="ibm/granite-embedding-278m-multilingual"):
         """Get vector embeddings for the provided text inputs."""
         embeddings_url = f"{self.base_url}/embeddings"
         headers = {
             "Authorization": f"Bearer {self.api_token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
-        payload = {
-            "inputs": texts,
-            "model_id": model_id
-        }
-        
+        payload = {"inputs": texts, "model_id": model_id}
+
         try:
             response = requests.post(embeddings_url, headers=headers, json=payload)
             response.raise_for_status()
@@ -134,57 +136,59 @@ class BaseIBMAPIProcessor:
         except requests.HTTPError as err:
             print(f"Error getting embeddings: {err}")
             return None
-    
+
     def send_message(
         self,
         # model='meta-llama/llama-3-1-8b-instruct',
         model=None,
         temperature=0.5,
         seed=None,  # For deterministic outputs
-        system_content='You are a helpful assistant.',
-        human_content='Hello!',
+        system_content="You are a helpful assistant.",
+        human_content="Hello!",
         is_structured=False,
         response_format=None,
         max_new_tokens=5000,
         min_new_tokens=1,
-        **kwargs
+        **kwargs,
     ):
         if model is None:
             model = self.default_model
         text_generation_url = f"{self.base_url}/text_generation"
         headers = {
             "Authorization": f"Bearer {self.api_token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
-        
+
         # Prepare the input messages
         input_messages = [
             {"role": "system", "content": system_content},
-            {"role": "user", "content": human_content}
+            {"role": "user", "content": human_content},
         ]
-        
+
         # Prepare parameters with defaults and any additional parameters
         parameters = {
             "temperature": temperature,
             "random_seed": seed,
             "max_new_tokens": max_new_tokens,
             "min_new_tokens": min_new_tokens,
-            **kwargs
+            **kwargs,
         }
-        
-        payload = {
-            "input": input_messages,
-            "model_id": model,
-            "parameters": parameters
-        }
-        
+
+        payload = {"input": input_messages, "model_id": model, "parameters": parameters}
+
         try:
             response = requests.post(text_generation_url, headers=headers, json=payload)
             response.raise_for_status()
             completion = response.json()
 
             content = completion.get("results")[0].get("generated_text")
-            self.response_data = {"model": completion.get("model_id"), "input_tokens": completion.get("results")[0].get("input_token_count"), "output_tokens": completion.get("results")[0].get("generated_token_count")}
+            self.response_data = {
+                "model": completion.get("model_id"),
+                "input_tokens": completion.get("results")[0].get("input_token_count"),
+                "output_tokens": completion.get("results")[0].get(
+                    "generated_token_count"
+                ),
+            }
             print(self.response_data)
             if is_structured and response_format is not None:
                 try:
@@ -193,27 +197,31 @@ class BaseIBMAPIProcessor:
                     validated_data = response_format.model_validate(parsed_dict)
                     content = validated_data.model_dump()
                     return content
-                
+
                 except Exception as err:
-                    print("Error processing structured response, attempting to reparse the response...")
+                    print(
+                        "Error processing structured response, attempting to reparse the response..."
+                    )
                     reparsed = self._reparse_response(content, system_content)
                     try:
                         repaired_json = repair_json(reparsed)
                         reparsed_dict = json.loads(repaired_json)
                         try:
-                            validated_data = response_format.model_validate(reparsed_dict)
+                            validated_data = response_format.model_validate(
+                                reparsed_dict
+                            )
                             print("Reparsing successful!")
                             content = validated_data.model_dump()
                             return content
-                        
+
                         except Exception:
                             return reparsed_dict
-                        
+
                     except Exception as reparse_err:
                         print(f"Reparse failed with error: {reparse_err}")
                         print(f"Reparsed response: {reparsed}")
                         return content
-            
+
             return content
 
         except requests.HTTPError as err:
@@ -223,25 +231,24 @@ class BaseIBMAPIProcessor:
     def _reparse_response(self, response, system_content):
 
         user_prompt = prompts.AnswerSchemaFixPrompt.user_prompt.format(
-            system_prompt=system_content,
-            response=response
+            system_prompt=system_content, response=response
         )
-        
+
         reparsed_response = self.send_message(
             system_content=prompts.AnswerSchemaFixPrompt.system_prompt,
             human_content=user_prompt,
-            is_structured=False
+            is_structured=False,
         )
-        
+
         return reparsed_response
 
-     
+
 class BaseGeminiProcessor:
     def __init__(self):
         self.llm = self._set_up_llm()
-        self.default_model = 'gemini-2.0-flash-001'
+        self.default_model = "gemini-2.0-flash-001"
         # self.default_model = "gemini-2.0-flash-thinking-exp-01-21",
-        
+
     def _set_up_llm(self):
         load_dotenv()
         api_key = os.getenv("GEMINI_API_KEY")
@@ -275,11 +282,10 @@ class BaseGeminiProcessor:
         """Wrapper for generate_content with retry logic"""
         try:
             return model.generate_content(
-                human_content,
-                generation_config=generation_config
+                human_content, generation_config=generation_config
             )
         except Exception as e:
-            if getattr(e, '_attempt_number', 0) == 3:
+            if getattr(e, "_attempt_number", 0) == 3:
                 print(f"\nRetry failed. Error: {str(e)}\n")
             raise
 
@@ -298,18 +304,17 @@ class BaseGeminiProcessor:
     def _reparse_response(self, response, response_format):
         """Reparse invalid JSON responses using the model itself."""
         user_prompt = prompts.AnswerSchemaFixPrompt.user_prompt.format(
-            system_prompt=prompts.AnswerSchemaFixPrompt.system_prompt,
-            response=response
+            system_prompt=prompts.AnswerSchemaFixPrompt.system_prompt, response=response
         )
-        
+
         try:
             reparsed_response = self.send_message(
                 model="gemini-2.0-flash-001",
                 system_content=prompts.AnswerSchemaFixPrompt.system_prompt,
                 human_content=user_prompt,
-                is_structured=False
+                is_structured=False,
             )
-            
+
             try:
                 repaired_json = repair_json(reparsed_response)
                 reparsed_dict = json.loads(repaired_json)
@@ -341,34 +346,35 @@ class BaseGeminiProcessor:
             model = self.default_model
 
         generation_config = {"temperature": temperature}
-        
+
         prompt = f"{system_content}\n\n---\n\n{human_content}"
 
         model_instance = self.llm.GenerativeModel(
-            model_name=model,
-            generation_config=generation_config
+            model_name=model, generation_config=generation_config
         )
 
         try:
-            response = self._generate_with_retry(model_instance, prompt, generation_config)
+            response = self._generate_with_retry(
+                model_instance, prompt, generation_config
+            )
 
             self.response_data = {
                 "model": response.model_version,
                 "input_tokens": response.usage_metadata.prompt_token_count,
-                "output_tokens": response.usage_metadata.candidates_token_count
+                "output_tokens": response.usage_metadata.candidates_token_count,
             }
             print(self.response_data)
-            
+
             if is_structured and response_format is not None:
                 return self._parse_structured_response(response.text, response_format)
-            
+
             return response.text
         except Exception as e:
             raise Exception(f"API request failed after retries: {str(e)}")
 
 
 class APIProcessor:
-    def __init__(self, provider: Literal["openai", "ibm", "gemini"] ="openai"):
+    def __init__(self, provider: Literal["openai", "ibm", "gemini"] = "openai"):
         self.provider = provider.lower()
         if self.provider == "openai":
             self.processor = BaseOpenaiProcessor()
@@ -386,7 +392,7 @@ class APIProcessor:
         human_content="Hello!",
         is_structured=False,
         response_format=None,
-        **kwargs
+        **kwargs,
     ):
         """
         Routes the send_message call to the appropriate processor.
@@ -402,81 +408,103 @@ class APIProcessor:
             human_content=human_content,
             is_structured=is_structured,
             response_format=response_format,
-            **kwargs
+            **kwargs,
         )
 
     def get_answer_from_rag_context(self, question, rag_context, schema, model):
-        system_prompt, response_format, user_prompt = self._build_rag_context_prompts(schema)
-        
+        system_prompt, response_format, user_prompt = self._build_rag_context_prompts(
+            schema
+        )
+
         answer_dict = self.processor.send_message(
             model=model,
             system_content=system_prompt,
             human_content=user_prompt.format(context=rag_context, question=question),
             is_structured=True,
-            response_format=response_format
+            response_format=response_format,
         )
         self.response_data = self.processor.response_data
         return answer_dict
 
-
     def _build_rag_context_prompts(self, schema):
         """Return prompts tuple for the given schema."""
-        use_schema_prompt = True if self.provider == "ibm" or self.provider == "gemini" else False
-        
+        use_schema_prompt = (
+            True if self.provider == "ibm" or self.provider == "gemini" else False
+        )
+
         if schema == "name":
-            system_prompt = (prompts.AnswerWithRAGContextNamePrompt.system_prompt_with_schema 
-                            if use_schema_prompt else prompts.AnswerWithRAGContextNamePrompt.system_prompt)
+            system_prompt = (
+                prompts.AnswerWithRAGContextNamePrompt.system_prompt_with_schema
+                if use_schema_prompt
+                else prompts.AnswerWithRAGContextNamePrompt.system_prompt
+            )
             response_format = prompts.AnswerWithRAGContextNamePrompt.AnswerSchema
             user_prompt = prompts.AnswerWithRAGContextNamePrompt.user_prompt
         elif schema == "number":
-            system_prompt = (prompts.AnswerWithRAGContextNumberPrompt.system_prompt_with_schema
-                            if use_schema_prompt else prompts.AnswerWithRAGContextNumberPrompt.system_prompt)
+            system_prompt = (
+                prompts.AnswerWithRAGContextNumberPrompt.system_prompt_with_schema
+                if use_schema_prompt
+                else prompts.AnswerWithRAGContextNumberPrompt.system_prompt
+            )
             response_format = prompts.AnswerWithRAGContextNumberPrompt.AnswerSchema
             user_prompt = prompts.AnswerWithRAGContextNumberPrompt.user_prompt
         elif schema == "boolean":
-            system_prompt = (prompts.AnswerWithRAGContextBooleanPrompt.system_prompt_with_schema
-                            if use_schema_prompt else prompts.AnswerWithRAGContextBooleanPrompt.system_prompt)
+            system_prompt = (
+                prompts.AnswerWithRAGContextBooleanPrompt.system_prompt_with_schema
+                if use_schema_prompt
+                else prompts.AnswerWithRAGContextBooleanPrompt.system_prompt
+            )
             response_format = prompts.AnswerWithRAGContextBooleanPrompt.AnswerSchema
             user_prompt = prompts.AnswerWithRAGContextBooleanPrompt.user_prompt
         elif schema == "names":
-            system_prompt = (prompts.AnswerWithRAGContextNamesPrompt.system_prompt_with_schema
-                            if use_schema_prompt else prompts.AnswerWithRAGContextNamesPrompt.system_prompt)
+            system_prompt = (
+                prompts.AnswerWithRAGContextNamesPrompt.system_prompt_with_schema
+                if use_schema_prompt
+                else prompts.AnswerWithRAGContextNamesPrompt.system_prompt
+            )
             response_format = prompts.AnswerWithRAGContextNamesPrompt.AnswerSchema
             user_prompt = prompts.AnswerWithRAGContextNamesPrompt.user_prompt
         elif schema == "comparative":
-            system_prompt = (prompts.ComparativeAnswerPrompt.system_prompt_with_schema
-                            if use_schema_prompt else prompts.ComparativeAnswerPrompt.system_prompt)
+            system_prompt = (
+                prompts.ComparativeAnswerPrompt.system_prompt_with_schema
+                if use_schema_prompt
+                else prompts.ComparativeAnswerPrompt.system_prompt
+            )
             response_format = prompts.ComparativeAnswerPrompt.AnswerSchema
             user_prompt = prompts.ComparativeAnswerPrompt.user_prompt
         else:
             raise ValueError(f"Unsupported schema: {schema}")
         return system_prompt, response_format, user_prompt
 
-    def get_rephrased_questions(self, original_question: str, companies: List[str]) -> Dict[str, str]:
+    def get_rephrased_questions(
+        self, original_question: str, companies: List[str]
+    ) -> Dict[str, str]:
         """Use LLM to break down a comparative question into individual questions."""
         answer_dict = self.processor.send_message(
             system_content=prompts.RephrasedQuestionsPrompt.system_prompt,
             human_content=prompts.RephrasedQuestionsPrompt.user_prompt.format(
                 question=original_question,
-                companies=", ".join([f'"{company}"' for company in companies])
+                companies=", ".join([f'"{company}"' for company in companies]),
             ),
             is_structured=True,
-            response_format=prompts.RephrasedQuestionsPrompt.RephrasedQuestions
+            response_format=prompts.RephrasedQuestionsPrompt.RephrasedQuestions,
         )
-        
+
         # Convert the answer_dict to the desired format
-        questions_dict = {item["company_name"]: item["question"] for item in answer_dict["questions"]}
-        
+        questions_dict = {
+            item["company_name"]: item["question"] for item in answer_dict["questions"]
+        }
+
         return questions_dict
 
 
 class AsyncOpenaiProcessor:
-    
+
     def _get_unique_filepath(self, base_filepath):
         """Helper method to get unique filepath"""
         if not os.path.exists(base_filepath):
             return base_filepath
-        
+
         base, ext = os.path.splitext(base_filepath)
         counter = 1
         while os.path.exists(f"{base}_{counter}{ext}"):
@@ -491,8 +519,8 @@ class AsyncOpenaiProcessor:
         system_content="You are a helpful assistant.",
         queries=None,
         response_format=None,
-        requests_filepath='./temp_async_llm_requests.jsonl',
-        save_filepath='./temp_async_llm_results.jsonl',
+        requests_filepath="./temp_async_llm_requests.jsonl",
+        save_filepath="./temp_async_llm_results.jsonl",
         preserve_requests=False,
         preserve_results=True,
         request_url="https://api.openai.com/v1/chat/completions",
@@ -501,7 +529,7 @@ class AsyncOpenaiProcessor:
         token_encoding_name="o200k_base",
         max_attempts=5,
         logging_level=20,
-        progress_callback=None
+        progress_callback=None,
     ):
         # Create requests for jsonl
         jsonl_requests = []
@@ -514,11 +542,11 @@ class AsyncOpenaiProcessor:
                     {"role": "system", "content": system_content},
                     {"role": "user", "content": query},
                 ],
-                'response_format': type_to_response_format_param(response_format),
-                'metadata': {'original_index': idx}
+                "response_format": type_to_response_format_param(response_format),
+                "metadata": {"original_index": idx},
             }
             jsonl_requests.append(request)
-            
+
         # Get unique filepaths if files already exist
         requests_filepath = self._get_unique_filepath(requests_filepath)
         save_filepath = self._get_unique_filepath(save_filepath)
@@ -536,7 +564,7 @@ class AsyncOpenaiProcessor:
             last_count = 0
             while True:
                 try:
-                    with open(save_filepath, 'r') as f:
+                    with open(save_filepath, "r") as f:
                         current_count = sum(1 for _ in f)
                         if current_count > last_count:
                             if progress_callback:
@@ -560,9 +588,9 @@ class AsyncOpenaiProcessor:
                     max_tokens_per_minute=max_tokens_per_minute,
                     token_encoding_name=token_encoding_name,
                     max_attempts=max_attempts,
-                    logging_level=logging_level
+                    logging_level=logging_level,
                 ),
-                monitor_progress()
+                monitor_progress(),
             )
 
         await process_with_progress()
@@ -575,33 +603,41 @@ class AsyncOpenaiProcessor:
                 try:
                     result = json.loads(raw_line)
                 except json.JSONDecodeError as e:
-                    print(f"[ERROR] Line {line_number}: Failed to load JSON from line: {raw_line}")
+                    print(
+                        f"[ERROR] Line {line_number}: Failed to load JSON from line: {raw_line}"
+                    )
                     continue
 
                 # Check finish_reason in the API response
-                finish_reason = result[1]['choices'][0].get('finish_reason', '')
+                finish_reason = result[1]["choices"][0].get("finish_reason", "")
                 if finish_reason != "stop":
-                    print(f"[WARNING] Line {line_number}: finish_reason is '{finish_reason}' (expected 'stop').")
+                    print(
+                        f"[WARNING] Line {line_number}: finish_reason is '{finish_reason}' (expected 'stop')."
+                    )
 
                 # Safely parse answer; if it fails, leave answer empty and report the error.
                 try:
-                    answer_content = result[1]['choices'][0]['message']['content']
+                    answer_content = result[1]["choices"][0]["message"]["content"]
                     answer_parsed = json.loads(answer_content)
                     answer = response_format(**answer_parsed).model_dump()
                 except Exception as e:
-                    print(f"[ERROR] Line {line_number}: Failed to parse answer JSON. Error: {e}.")
+                    print(
+                        f"[ERROR] Line {line_number}: Failed to parse answer JSON. Error: {e}."
+                    )
                     answer = ""
 
-                results.append({
-                    'index': result[2],
-                    'question': result[0]['messages'],
-                    'answer': answer
-                })
-            
+                results.append(
+                    {
+                        "index": result[2],
+                        "question": result[0]["messages"],
+                        "answer": answer,
+                    }
+                )
+
             # Sort by original index and build final list
             validated_data_list = [
-                {'question': r['question'], 'answer': r['answer']} 
-                for r in sorted(results, key=lambda x: x['index']['original_index'])
+                {"question": r["question"], "answer": r["answer"]}
+                for r in sorted(results, key=lambda x: x["index"]["original_index"])
             ]
 
         if not preserve_requests:
@@ -612,12 +648,12 @@ class AsyncOpenaiProcessor:
         else:  # Fix requests order
             with open(save_filepath, "r") as f:
                 results = [json.loads(line) for line in f]
-            
-            sorted_results = sorted(results, key=lambda x: x[2]['original_index'])
-            
+
+            sorted_results = sorted(results, key=lambda x: x[2]["original_index"])
+
             with open(save_filepath, "w") as f:
                 for result in sorted_results:
                     json_string = json.dumps(result)
                     f.write(json_string + "\n")
-            
+
         return validated_data_list
