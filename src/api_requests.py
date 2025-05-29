@@ -64,7 +64,6 @@ class BaseOpenaiProcessor:
         elif is_structured:
             params["response_format"] = response_format
             completion = self.llm.beta.chat.completions.parse(**params)
-
             response = completion.choices[0].message.parsed
             content = response.dict()
 
@@ -513,7 +512,7 @@ class AsyncOpenaiProcessor:
 
     async def process_structured_ouputs_requests(
         self,
-        model="gpt-4o-mini-2024-07-18",
+        model="Qwen/Qwen3-32B",
         temperature=0.5,
         seed=None,
         system_content="You are a helpful assistant.",

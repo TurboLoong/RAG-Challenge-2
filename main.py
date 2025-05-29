@@ -29,7 +29,7 @@ def download_models():
 @click.option("--max-workers", default=10, help="Number of parallel worker processes")
 def parse_pdfs(parallel, chunk_size, max_workers):
     """Parse PDF reports with optional parallel processing."""
-    os.chdir("./data/test_set")
+    # os.chdir("./data/test_set")
     root_path = Path.cwd()
     pipeline = Pipeline(root_path)
 
